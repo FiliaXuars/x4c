@@ -1,6 +1,7 @@
 name: Embed code in README
 
 on:
+  workflow_dispatch:
   pull_request:
     branches:
       - main
