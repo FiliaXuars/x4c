@@ -1,7 +1,53 @@
 # x4c
 
 ./specs
-<code>
-```./specs
 ```
-</code>
+32b cpu
+4b instructions
+2b      cpu memory addressing
+26b     main memory addressing
+
+67 108 864b
+8.38MB
+2 097 152 addresses
+000000-1fffff
+
+VRAM 1fbfff-1fffff
+5kb display 128^2 limited 32 color palette
+
+INPUT 1fbffe (default 32)
+32b
+
+0-f     0-f     000000-1fffff
+opcode  buffer  address
+
+i = instruction
+m = main memory
+c = compute memory
+- = ignored
+
+[instructions]
+0   noop                [--------]
+1   jump unconditional  [i-mmmmmm]
+2   jump conditional    [icmmmmmm]
+3   jump to pointer     [ic------]
+4   take                [icmmmmmm]
+5   place               [icmmmmmm]
+6   greater than        [iccc----]
+7   less than           [iccc----]
+8   and                 [iccc----]
+9   or                  [iccc----]
+a   xor                 [iccc----]
+b   nor                 [iccc----]
+c   add                 [iccc----]
+d   sub                 [iccc----]
+e   shift left          [iccc----]
+f   shift right         [iccc----]
+
+[non-addressable]
+10  stores current program position to 000000 and goes to 000001's result if INPUT contains "^,"
+11  restarts to OS at ### if INPUT contains "^."
+
+[emulation]
+20  VRAM to "display"
+21  take keyboard events to INPUT (jumper wired to correct address)```
