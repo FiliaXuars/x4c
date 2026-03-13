@@ -1,0 +1,15 @@
+[package]
+name = "x4c"
+version = "1.0.0"
+edition = "2024"
+
+[profile.release]
+opt-level = "z"
+strip = true
+lto = true
+codegen-units = 1
+panic = "abort"
+
+[dependencies]
+hex = "0.4.3"
+sdl2 = "0.38.0"
