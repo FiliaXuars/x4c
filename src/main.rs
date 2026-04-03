@@ -1,3 +1,5 @@
+static FULLCOLOR: bool = false;
+
 pub struct NewComputer
 {
     pub memory:             Vec<usize>,
@@ -143,23 +145,46 @@ impl NewComputer
         }
     }
 
-    pub fn get_nearest_color(&mut self, hex: usize) -> (u8, u8, u8)
+    pub fn get_nearest_color(&mut self, hex: usize, seed: u32, gain: u8) -> (u8, u8, u8)
     {
+        if FULLCOLOR
+        {
+            return (
+                    ((hex & 0xff0000) >> 16) as u8,
+                    ((hex & 0x00ff00) >> 8) as u8,
+                    (hex & 0x0000ff) as u8
+            );
+        }
+
         if hex <= 0x00ffffff
         {
-            let color = self.colormap_table[hex];
-            (((color & 0xff0000) >> 16) as u8,((color & 0x00ff00) >> 8 ) as u8, ((color & 0x0000ff)) as u8)
+            let noisy_value = 
+                0_u32 + 
+                ((noisify_value(((hex & 0xff0000) >> 16) as u8, seed, gain) as u32) << 16) + 
+                ((noisify_value(((hex & 0x00ff00) >> 8) as u8,  seed, gain) as u32) << 8) +
+                (noisify_value((hex & 0x0000ff) as u8,         seed, gain) as u32);
+            let color = self.colormap_table[noisy_value as usize];
+            (
+                ((color & 0xff0000) >> 16) as u8,
+                ((color & 0x00ff00) >> 8) as u8,
+                (color & 0x0000ff) as u8
+            )
         }
         else
         {
             (0, 0, 0)
         }
     }
+    
 
     pub fn get_vram_pixel(&mut self, mut pixel: usize) -> (u8, u8, u8)
     {
         pixel = pixel.saturating_add(self.vram_offset);
-        self.get_nearest_color(self.memory[pixel as usize] as usize)
+        self.get_nearest_color(
+            self.memory[pixel as usize] as usize, 
+            579_u32.overflowing_mul(((pixel * (pixel/128)) as u32).overflowing_div(10).0).0, 
+            253
+        )
     }
 
     pub fn get_palette_nearest_color(&mut self, hue: u16, value: u8) -> (u8, u8, u8)
@@ -201,7 +226,7 @@ impl NewComputer
             let color = self.memory[self.vram_offset as usize + pixel as usize].to_be_bytes();
             match use_color
             {
-                false => canvas.set_draw_color(self.get_palette_nearest_color(300, (color[1] as u16 + color[2] as u16 + color[3] as u16 / 3) as u8)),
+                false => canvas.set_draw_color(self.get_palette_nearest_color(300, (color[5] as u16 + color[6] as u16 + color[7] as u16 / 3) as u8)),
                 true => canvas.set_draw_color(self.get_vram_pixel(pixel)),
             }
 
@@ -232,7 +257,52 @@ impl NewComputer
             }
         }
     }
+    
+    pub fn check_for_rom(&mut self, address: usize)
+    {
+        todo!();
+    }
 
+    pub fn load_rom(&mut self)
+    {
+        todo!();
+    }
+}
+
+fn noisify_value(value: u8, seed: u32, gain: u8) -> u8
+{
+    let seed = seed ^ (seed.unbounded_shl(13));
+    let seed = seed ^ (seed.unbounded_shr(7));
+    let seed = seed ^ (seed.unbounded_shl(17));
+    let seed = seed.saturating_div(4);
+    // value - (seed / 100000) / (255 - gain)
+    let noisy_value = (
+        value.saturating_sub(
+            seed.saturating_div(
+                    10000000
+            ).saturating_div(
+                256_u32.saturating_sub(
+                    gain as u32
+                )
+            ) as u8
+        ) as u8
+    );
+    noisy_value
+}
+
+fn base10tobase2(mut number: u32) -> String
+{
+    let mut value = "".to_string();
+    while number >= 1
+    {
+        value = "".to_string() + (number % 2).to_string().as_str() + &value;
+        number = number / 2;
+    }
+    while value.len() < 32
+    {
+        value = "".to_string() + "0" + &value;
+    }
+    value
 }
 
 pub trait FromUsize
@@ -339,13 +409,13 @@ fn main()
                     usize::from_be_bytes(
                         [
                             0x0,
-                            boot_pic_bytes[boot_byte as usize],
-                            boot_pic_bytes[boot_byte as usize+1],
+                            0x0,
+                            0x0,
+                            0x0,
+                            0x0,
                             boot_pic_bytes[boot_byte as usize+2],
-                            0x0,
-                            0x0,
-                            0x0,
-                            0x0
+                            boot_pic_bytes[boot_byte as usize+1],
+                            boot_pic_bytes[boot_byte as usize+0],
                         ]
                     );
             }
@@ -359,12 +429,12 @@ fn main()
 
     canvas.present();
     computer.calculate_color_corrections();
-
+    
     for pixel in computer.vram_offset..=0x3ffffff
     {
-        computer.memory[pixel as usize] = 0x303030;
+        computer.memory[pixel as usize] = 0x563341;
     }
-
+    
     computer.memory[0] = 0x20000002;
     computer.memory[1] = 0x10000000;
     computer.memory[2] = 0xffffffff;
@@ -445,7 +515,7 @@ fn main()
 
     'running: loop
     {
-        canvas.set_draw_color(computer.get_nearest_color(0x0));
+        canvas.set_draw_color(computer.get_nearest_color(0x0, 0, 0));
 
         canvas.clear();
         for event in event_pump.poll_iter() {
@@ -488,11 +558,11 @@ fn main()
                 },
                 sdl2::event::Event::KeyDown { keycode: Some(sdl2::keyboard::Keycode::F2), .. } =>
                 {
-                    computer.display_scale_by = computer.display_scale_by.wrapping_sub(1);
+                    computer.display_scale_by = computer.display_scale_by.saturating_sub(1);
                 },
                 sdl2::event::Event::KeyDown { keycode: Some(sdl2::keyboard::Keycode::F3), .. } =>
                 {
-                    computer.display_scale_by = computer.display_scale_by.wrapping_add(1);
+                    computer.display_scale_by = computer.display_scale_by.saturating_add(1);
                 },
                 sdl2::event::Event::KeyDown { keycode, .. } =>
                 {
@@ -506,7 +576,7 @@ fn main()
             }
         }
 
-        canvas.set_draw_color(computer.get_nearest_color(0xff0000));
+        canvas.set_draw_color(computer.get_nearest_color(0xff0000, 0, 0));
         let _ = canvas.draw_rect(
             sdl2::rect::Rect::new(
                 9,
