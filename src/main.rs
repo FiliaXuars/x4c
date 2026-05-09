@@ -258,14 +258,87 @@ impl NewComputer
         }
     }
     
-    pub fn check_for_rom(&mut self, address: usize)
+    pub fn check_for_rom(&mut self)
     {
-        todo!();
+		let directory = std::fs::read_dir(".");
+		if directory.is_ok()
+		{
+			let directory = directory.unwrap();
+			for entry in directory
+			{
+				let mut bad = true;
+				if entry.is_ok()
+				{
+					let entry = entry.unwrap();
+					let file_type = entry.file_type();
+
+					let mut value: usize = 0;
+					if file_type.is_ok()
+					{
+						if file_type.unwrap().is_file()
+						{
+							let file_name = &entry.file_name().into_encoded_bytes();
+							if file_name.len() > 6 //0x_.rom
+							{
+								if (
+									file_name[0] == 0x30 && 				//0
+									file_name[1] == 0x78 && 				//x
+									file_name[file_name.len()-4] == 0x2e && //.
+									file_name[file_name.len()-3] == 0x72 && //r
+									file_name[file_name.len()-2] == 0x6f && //o
+									file_name[file_name.len()-1] == 0x6d 	//m
+								)
+								{
+									bad = false;
+									for byte in 2..file_name.len()-4
+									{
+										let number = file_name[byte]-48;
+										if number < 48
+										{
+											value = (value.saturating_mul(16)) + number as usize;
+										}
+										else if (number >= 49) && (number <= 54)
+										{
+											value = (value.saturating_mul(16)) + (number - 39) as usize;
+										}
+										else
+										{
+											bad = true;
+										}
+									}
+								}
+							}
+							
+						}
+					}
+					if !bad
+					{
+						self.load_rom(String::from_utf8(entry.file_name().into_encoded_bytes()).expect("filename bad"), value);
+					}
+				}
+			}
+        }
     }
 
-    pub fn load_rom(&mut self)
+    pub fn load_rom(&mut self, path: String, value: usize )
     {
-        todo!();
+		let file: Vec<u8> = std::fs::read(path).expect("dowp");
+		if file.len() > 0
+		{
+			for byte in 0..(file.len()-1)/4
+			{
+				if value < self.memory.len() - 1
+				{
+					self.memory[value + byte] =
+					(
+						((file[byte]   as usize) << (8*3)) + 
+						((file[byte+1] as usize) << (8*2)) + 
+						((file[byte+2] as usize) << (8*1)) + 
+						((file[byte+3] as usize)         )
+					);
+				}
+			}
+		}
     }
 }
 
@@ -352,7 +425,6 @@ fn main()
         input_offset:       0x03ffbfff,
         character_table_offset: 0x003ffbbc,
     };
-
     let sdl_context = sdl2::init().unwrap();
     let video_subsystem = sdl_context.video().unwrap();
 
@@ -435,10 +507,6 @@ fn main()
         computer.memory[pixel as usize] = 0x563341;
     }
     
-    computer.memory[0] = 0x20000002;
-    computer.memory[1] = 0x10000000;
-    computer.memory[2] = 0xffffffff;
-
     let font: [usize; 41] =
     [
         0b011101000110001111111000110001, // a
@@ -512,6 +580,7 @@ fn main()
             x = 0;
         }
     }
+	computer.check_for_rom();
 
     'running: loop
     {

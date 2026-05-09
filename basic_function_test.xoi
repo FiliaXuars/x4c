@@ -1,0 +1,4 @@
+data is 00ff00
+vram is 3cffc001
+take 0 &data
+place 0 &vram
