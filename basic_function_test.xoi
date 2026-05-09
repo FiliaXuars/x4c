@@ -1,4 +1,22 @@
-data is 00ff00
-vram is 3cffc001
-take 0 &data
-place 0 &vram
+data is 64
+address is 65
+one is 66
+mask is 67
+place_cmd is 68
+empty is 69
+
+take 0 data
+take 1 address
+
+loop()
+take 2 one
+take 3 mask
+1 add 2 1
+1 and 3 1
+place 1 address
+take 2 place_cmd
+take 3 address
+2 or 3 2
+0 or 0 0
+place 2 10
+jumpu 0 2

@@ -1,5 +1,7 @@
 static FULLCOLOR: bool = false;
+static DEBUG: bool = false;
 
+#[derive(Clone, Debug)]
 pub struct NewComputer
 {
     pub memory:             Vec<usize>,
@@ -24,9 +26,9 @@ impl NewComputer
         let instruction: u8 = ((read & 0xf0000000) >> 28) as u8;
         let memory_address = (read & 0x03ffffff) as usize;
 
-        let buffer_address_a = (read & 0x0c000000 >> 26) as u8;
-        let buffer_address_b = (read & 0x03000000 >> 24) as u8;
-        let buffer_address_c = (read & 0x00c00000 >> 22) as u8;
+        let buffer_address_a = ((read & 0x0c000000) >> 26) as u8;
+        let buffer_address_b = ((read & 0x03000000) >> 24) as u8;
+        let buffer_address_c = ((read & 0x00c00000) >> 22) as u8;
         match instruction
         {
             0x0 => self.program_position = self.program_position.wrapping_add(1),
@@ -55,7 +57,7 @@ impl NewComputer
             },
             0x5 =>
             {
-                self.memory[memory_address as usize] = self.memory[self.buffer[buffer_address_a as usize] & 0x1ffffff];
+                self.memory[memory_address as usize] = self.buffer[buffer_address_a as usize];
                 self.program_position = self.program_position.wrapping_add(1);
             },
             0x6 =>
@@ -230,6 +232,7 @@ impl NewComputer
                 true => canvas.set_draw_color(self.get_vram_pixel(pixel)),
             }
 
+			
             let _ = canvas.fill_rect(
                 sdl2::rect::Rect::new(
                     10+((pixel & 0x007f) * self.display_scale_by) as i32,
@@ -325,17 +328,18 @@ impl NewComputer
 		let file: Vec<u8> = std::fs::read(path).expect("dowp");
 		if file.len() > 0
 		{
-			for byte in 0..(file.len()-1)/4
+			for byte in 0..(file.len())/4
 			{
 				if value < self.memory.len() - 1
 				{
 					self.memory[value + byte] =
 					(
-						((file[byte]   as usize) << (8*3)) + 
-						((file[byte+1] as usize) << (8*2)) + 
-						((file[byte+2] as usize) << (8*1)) + 
-						((file[byte+3] as usize)         )
+						((file[(byte *4)]   as usize) << (8*3)) + 
+						((file[(byte *4)+1] as usize) << (8*2)) + 
+						((file[(byte *4)+2] as usize) << (8*1)) + 
+						((file[(byte *4)+3] as usize)         )
 					);
+					print!("{}:\n", self.memory[value + byte]);
 				}
 			}
 		}
@@ -577,86 +581,86 @@ fn main()
         x = x.wrapping_add(1);
         if x == 5
         {
-            x = 0;
+        	x = 0;
         }
     }
 	computer.check_for_rom();
 
-    'running: loop
-    {
-        canvas.set_draw_color(computer.get_nearest_color(0x0, 0, 0));
 
-        canvas.clear();
-        for event in event_pump.poll_iter() {
-            match event {
-                sdl2::event::Event::Quit {..} |
-                sdl2::event::Event::KeyDown { keycode: Some(sdl2::keyboard::Keycode::Escape), .. } =>
-                {
-                    break 'running
-                },
-                sdl2::event::Event::KeyDown { keycode: Some(sdl2::keyboard::Keycode::F5), .. } =>
-                {
-                    let memory_file = std::fs::File::create("x4c-memory.hex");
-                    if memory_file.is_ok()
-                    {
-                        let mut memory_file = memory_file.unwrap();
-                        let mut file_data: Vec<u8> = vec![];
-                        for address in 0..computer.memory.len()
-                        {
-                            let address_read = computer.memory[address].to_be_bytes();
-                            file_data.append(&mut address_read.to_vec());
-                        }
-                        let _ = std::io::Write::write_all(&mut memory_file, &file_data);
-                    }
-                },
-                sdl2::event::Event::KeyDown { keycode: Some(sdl2::keyboard::Keycode::F6), .. } =>
-                {
-                    let memory_file = std::fs::File::create("colormap.hex");
-                    if memory_file.is_ok()
-                    {
-                        let mut memory_file = memory_file.unwrap();
-                        let mut file_data: Vec<u8> = vec![];
-                        for address in 0..computer.colormap_table.len()
-                        {
-                            let address_read = computer.colormap_table[address].to_be_bytes();
-                            file_data.append(&mut address_read.to_vec());
-                        }
-                        let _ = std::io::Write::write_all(&mut memory_file, &file_data);
-                    }
+	'running: loop
+	{
+		canvas.set_draw_color(computer.get_nearest_color(0x0, 0, 0));
 
-                },
-                sdl2::event::Event::KeyDown { keycode: Some(sdl2::keyboard::Keycode::F2), .. } =>
-                {
-                    computer.display_scale_by = computer.display_scale_by.saturating_sub(1);
-                },
-                sdl2::event::Event::KeyDown { keycode: Some(sdl2::keyboard::Keycode::F3), .. } =>
-                {
-                    computer.display_scale_by = computer.display_scale_by.saturating_add(1);
-                },
-                sdl2::event::Event::KeyDown { keycode, .. } =>
-                {
-                    if keycode.is_some()
-                    {
-                        computer.memory[computer.input_offset as usize] = keycode.unwrap().into_i32() as usize;
-                        println!("{:?}",keycode);
-                    }
-                }
-                _ => {}
-            }
-        }
+		canvas.clear();
+		for event in event_pump.poll_iter() {
+			match event {
+				sdl2::event::Event::Quit {..} |
+				sdl2::event::Event::KeyDown { keycode: Some(sdl2::keyboard::Keycode::Escape), .. } =>
+				{
+					break 'running;//should escape
+				},
+				sdl2::event::Event::KeyDown { keycode: Some(sdl2::keyboard::Keycode::F5), .. } =>
+				{
+					let memory_file = std::fs::File::create("x4c-memory.hex");
+					if memory_file.is_ok()
+					{
+						let mut memory_file = memory_file.unwrap();
+						let mut file_data: Vec<u8> = vec![];
+						for address in 0..computer.memory.len()
+						{
+							let address_read = computer.memory[address].to_be_bytes();
+							file_data.append(&mut address_read.to_vec());
+						}
+						let _ = std::io::Write::write_all(&mut memory_file, &file_data);
+					}
+				},
+				sdl2::event::Event::KeyDown { keycode: Some(sdl2::keyboard::Keycode::F6), .. } =>
+				{
+					let memory_file = std::fs::File::create("colormap.hex");
+					if memory_file.is_ok()
+					{
+						let mut memory_file = memory_file.unwrap();
+						let mut file_data: Vec<u8> = vec![];
+						for address in 0..computer.colormap_table.len()
+						{
+							let address_read = computer.colormap_table[address].to_be_bytes();
+							file_data.append(&mut address_read.to_vec());
+						}
+						let _ = std::io::Write::write_all(&mut memory_file, &file_data);
+					}
 
-        canvas.set_draw_color(computer.get_nearest_color(0xff0000, 0, 0));
-        let _ = canvas.draw_rect(
-            sdl2::rect::Rect::new(
-                9,
-                9,
-                u32::from_usize(computer.display_scale_by)[0] * 128+2,
-                u32::from_usize(computer.display_scale_by)[0] * 128+2
-            )
-        ).is_ok();
-        computer.process_instruction();
+				},
+				sdl2::event::Event::KeyDown { keycode: Some(sdl2::keyboard::Keycode::F2), .. } =>
+				{
+					computer.display_scale_by = computer.display_scale_by.saturating_sub(1);
+				},
+				sdl2::event::Event::KeyDown { keycode: Some(sdl2::keyboard::Keycode::F3), .. } =>
+				{
+					computer.display_scale_by = computer.display_scale_by.saturating_add(1);
+				},
+				sdl2::event::Event::KeyDown { keycode, .. } =>
+				{
+					if keycode.is_some()
+					{
+						computer.memory[computer.input_offset as usize] = keycode.unwrap().into_i32() as usize;
+						println!("{:?}",keycode);
+					}
+				}
+				_ => {}
+			}
+		}
 
-        let _ = computer.draw(&mut canvas, true);
-        canvas.present();
-    }
+		canvas.set_draw_color(computer.get_nearest_color(0xff0000, 0, 0));
+		let _ = canvas.draw_rect(
+			sdl2::rect::Rect::new(
+				9,
+				9,
+				u32::from_usize(computer.display_scale_by)[0] * 128+2,
+				u32::from_usize(computer.display_scale_by)[0] * 128+2
+			)
+		).is_ok();
+		let result = computer.draw(&mut canvas, true);
+		canvas.present();
+		computer.process_instruction();
+	}
 }
