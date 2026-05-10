@@ -1,28 +1,28 @@
 static FULLCOLOR: bool = false;
 static DEBUG: bool = false;
 
-#[derive(Clone, Debug)]
 pub struct NewComputer
 {
-    pub memory:             Vec<usize>,
-    pub program_position:   usize,
+    pub memory:             		Vec<usize>,
+    pub program_position:   		usize,
 
-    pub buffer:             [usize; 0x4],
-    pub colormap_table:     Vec<usize>,
+    pub buffer:             		[usize; 0x4],
+    pub colormap_table:     		Vec<usize>,
 
-    pub display_size:       usize,
-    pub vram_offset:        usize,
-    pub display_scale_by:   usize,
+    pub display_size:       		usize,
+    pub vram_offset:        		usize,
 
-    pub input_offset:       usize,
+    pub input_offset:       		usize,
     pub character_table_offset:     usize,
+
+	pub profiling:					usize,
 }
 
 impl NewComputer
 {
     pub fn process_instruction(&mut self)
     {
-        let read = self.memory[self.program_position as usize];
+        let read = self.memory[self.program_position as usize & self.memory.len()-1];
         let instruction: u8 = ((read & 0xf0000000) >> 28) as u8;
         let memory_address = (read & 0x03ffffff) as usize;
 
@@ -57,7 +57,8 @@ impl NewComputer
             },
             0x5 =>
             {
-                self.memory[memory_address as usize] = self.buffer[buffer_address_a as usize];
+				let value = self.memory[memory_address as usize] & 0x3ffffff;
+                self.memory[value] = self.buffer[buffer_address_a as usize];
                 self.program_position = self.program_position.wrapping_add(1);
             },
             0x6 =>
@@ -122,6 +123,115 @@ impl NewComputer
         }
     }
 
+    pub fn check_for_rom(&mut self)
+    {
+		let directory = std::fs::read_dir(".");
+		if directory.is_ok()
+		{
+			let directory = directory.unwrap();
+			for entry in directory
+			{
+				let mut bad = true;
+				if entry.is_ok()
+				{
+					let entry = entry.unwrap();
+					let file_type = entry.file_type();
+
+					let mut value: usize = 0;
+					if file_type.is_ok()
+					{
+						if file_type.unwrap().is_file()
+						{
+							let file_name = &entry.file_name().into_encoded_bytes();
+							if file_name.len() > 6 //0x_.rom
+							{
+								if (
+									file_name[0] == 0x30 && 				//0
+									file_name[1] == 0x78 && 				//x
+									file_name[file_name.len()-4] == 0x2e && //.
+									file_name[file_name.len()-3] == 0x72 && //r
+									file_name[file_name.len()-2] == 0x6f && //o
+									file_name[file_name.len()-1] == 0x6d 	//m
+								)
+								{
+									bad = false;
+									for byte in 2..file_name.len()-4
+									{
+										let number = file_name[byte]-48;
+										if number < 48
+										{
+											value = (value.saturating_mul(16)) + number as usize;
+										}
+										else if (number >= 49) && (number <= 54)
+										{
+											value = (value.saturating_mul(16)) + (number - 39) as usize;
+										}
+										else
+										{
+											bad = true;
+										}
+									}
+								}
+							}
+						}
+					}
+					if !bad
+					{
+						self.load_rom(String::from_utf8(entry.file_name().into_encoded_bytes()).expect("filename bad"), value);
+					}
+				}
+			}
+        }
+    }
+
+    pub fn load_rom(&mut self, path: String, value: usize )
+    {
+		let file: Vec<u8> = std::fs::read(path).expect("dowp");
+		if file.len() > 0
+		{
+			for byte in 0..(file.len())/4
+			{
+				if value < self.memory.len() - 1
+				{
+					self.memory[value + byte] =
+					(
+						((file[(byte *4)]   as usize) << (8*3)) + 
+						((file[(byte *4)+1] as usize) << (8*2)) + 
+						((file[(byte *4)+2] as usize) << (8*1)) + 
+						((file[(byte *4)+3] as usize)         )
+					);
+				}
+			}
+		}
+    }
+}
+
+pub struct NewDisplay
+{
+    pub memory:             Vec<usize>,
+    pub colormap_table:     Vec<usize>,
+	pub display_scale_by:	usize,
+}
+
+impl NewDisplay
+{
+	pub fn flip_vram_vertically(&mut self)
+    {
+        let mut vram_copy = vec![0x0; 0x4000];
+        for pixel in 0..0x4000
+        {
+            vram_copy[pixel as usize] =
+                self.memory[pixel as usize];
+        }
+        for y in 1..129
+        {
+            for x in 0..128
+            {
+                self.memory[0x4000 - (y * 128) + x] = vram_copy[x + ((y - 1) * 128)];
+            }
+        }
+    }
+    
     pub fn calculate_color_corrections(&mut self)
     {
         let color_palette: [i32; 32] = [0x3a2658, 0x403287, 0x563341, 0x4d43bd, 0x75443d, 0x943f65, 0x3a588c, 0x8c3f89, 0xa7484c, 0x4e6365, 0x70614e, 0x5e7257, 0x9762f6, 0x548a5c, 0x7f72f9, 0xf071a7, 0xe174f2, 0xf77782, 0x52aaa5, 0x86a656, 0xf78369, 0xb394fc, 0x74aff0, 0xf688e6, 0x57c764, 0x80b8d2, 0x52d196, 0xe4b15d, 0xefb6fd, 0x60eaec, 0x70f253, 0xcee14b];
@@ -181,7 +291,6 @@ impl NewComputer
 
     pub fn get_vram_pixel(&mut self, mut pixel: usize) -> (u8, u8, u8)
     {
-        pixel = pixel.saturating_add(self.vram_offset);
         self.get_nearest_color(
             self.memory[pixel as usize] as usize, 
             579_u32.overflowing_mul(((pixel * (pixel/128)) as u32).overflowing_div(10).0).0, 
@@ -221,11 +330,11 @@ impl NewComputer
         )
     }
 
-    pub fn draw(&mut self, canvas: &mut sdl2::render::Canvas<sdl2::video::Window>, use_color: bool)
+	pub fn draw(&mut self, canvas: &mut sdl2::render::Canvas<sdl2::video::Window>, use_color: bool)
     {
         for pixel in 0..0x4000
         {
-            let color = self.memory[self.vram_offset as usize + pixel as usize].to_be_bytes();
+            let color = self.memory[pixel as usize].to_be_bytes();
             match use_color
             {
                 false => canvas.set_draw_color(self.get_palette_nearest_color(300, (color[5] as u16 + color[6] as u16 + color[7] as u16 / 3) as u8)),
@@ -242,107 +351,6 @@ impl NewComputer
                 )
             ).is_ok();
         }
-    }
-
-    pub fn flip_vram_vertically(&mut self)
-    {
-        let mut vram_copy = vec![0x0; self.display_size as usize];
-        for pixel in 0..self.display_size
-        {
-            vram_copy[pixel as usize] =
-                self.memory[self.vram_offset as usize + pixel as usize];
-        }
-        for y in 1..129
-        {
-            for x in 0..128
-            {
-                self.memory[0x3ffffff - (y * 128) + x] = vram_copy[x + ((y - 1) * 128)];
-            }
-        }
-    }
-    
-    pub fn check_for_rom(&mut self)
-    {
-		let directory = std::fs::read_dir(".");
-		if directory.is_ok()
-		{
-			let directory = directory.unwrap();
-			for entry in directory
-			{
-				let mut bad = true;
-				if entry.is_ok()
-				{
-					let entry = entry.unwrap();
-					let file_type = entry.file_type();
-
-					let mut value: usize = 0;
-					if file_type.is_ok()
-					{
-						if file_type.unwrap().is_file()
-						{
-							let file_name = &entry.file_name().into_encoded_bytes();
-							if file_name.len() > 6 //0x_.rom
-							{
-								if (
-									file_name[0] == 0x30 && 				//0
-									file_name[1] == 0x78 && 				//x
-									file_name[file_name.len()-4] == 0x2e && //.
-									file_name[file_name.len()-3] == 0x72 && //r
-									file_name[file_name.len()-2] == 0x6f && //o
-									file_name[file_name.len()-1] == 0x6d 	//m
-								)
-								{
-									bad = false;
-									for byte in 2..file_name.len()-4
-									{
-										let number = file_name[byte]-48;
-										if number < 48
-										{
-											value = (value.saturating_mul(16)) + number as usize;
-										}
-										else if (number >= 49) && (number <= 54)
-										{
-											value = (value.saturating_mul(16)) + (number - 39) as usize;
-										}
-										else
-										{
-											bad = true;
-										}
-									}
-								}
-							}
-							
-						}
-					}
-					if !bad
-					{
-						self.load_rom(String::from_utf8(entry.file_name().into_encoded_bytes()).expect("filename bad"), value);
-					}
-				}
-			}
-        }
-    }
-
-    pub fn load_rom(&mut self, path: String, value: usize )
-    {
-		let file: Vec<u8> = std::fs::read(path).expect("dowp");
-		if file.len() > 0
-		{
-			for byte in 0..(file.len())/4
-			{
-				if value < self.memory.len() - 1
-				{
-					self.memory[value + byte] =
-					(
-						((file[(byte *4)]   as usize) << (8*3)) + 
-						((file[(byte *4)+1] as usize) << (8*2)) + 
-						((file[(byte *4)+2] as usize) << (8*1)) + 
-						((file[(byte *4)+3] as usize)         )
-					);
-					print!("{}:\n", self.memory[value + byte]);
-				}
-			}
-		}
     }
 }
 
@@ -414,60 +422,62 @@ impl FromUsize for u32
     }
 }
 
+const DUMPMEM: usize = 0;
+const DUMPVRAM: usize = 1;
+const INPUT: usize = 2;
+const STOP: usize = 3;
+
 fn main()
 {
     let mut computer = NewComputer
     {
-        memory:             vec![0x0; 0x4000000],
-        program_position:   0x0,
-        buffer:             [0x0; 0x4],
-        colormap_table:     vec![0x0; 16777216],
-        display_scale_by:   6,
-        display_size:       128 * 128,
-        vram_offset:        0x03ffc000,
+        memory:             		vec![0x0; 0x4000000],
+        program_position:   		0x0,
+        buffer:             		[0x0; 0x4],
+        colormap_table:     		vec![0x0; 16777216],
+        display_size:       		128 * 128,
+        vram_offset:        		0x03ffc000,
 
-        input_offset:       0x03ffbfff,
-        character_table_offset: 0x003ffbbc,
+        input_offset:       		0x03ffbfff,
+        character_table_offset: 	0x003ffbbc,
+
+		profiling:					0x0,
     };
+
+	let mut display = NewDisplay
+	{
+        memory:             vec![0x0; 0x4000000],
+        colormap_table:     vec![0x0; 16777216],
+		display_scale_by:	6,
+	};
+
     let sdl_context = sdl2::init().unwrap();
     let video_subsystem = sdl_context.video().unwrap();
 
-    let window = video_subsystem.window("X4C", 128*u32::from_usize(computer.display_scale_by)[0]+20, 128*u32::from_usize(computer.display_scale_by)[0]+20)
+    let window = video_subsystem.window("X4C", 128*u32::from_usize(display.display_scale_by)[0]+20, 128*u32::from_usize(display.display_scale_by)[0]+20)
         .build()
         .unwrap();
     let mut canvas = window.into_canvas().build().unwrap();
 
-    canvas.set_draw_color(computer.get_palette_nearest_color(0x0, 0x0));
+	canvas.set_draw_color(sdl2::pixels::Color::RGB(0x3a, 0x26, 0x58));
     canvas.clear();
     canvas.present();
 
-    for pixel in computer.vram_offset..=0x3ffffff
+    for pixel in 0..0x4000
     {
-        match ((pixel - computer.vram_offset) + (pixel - computer.vram_offset) / 128) % 2
+        match ((pixel) + (pixel) / 128) % 2
         {
-            0 => computer.memory[pixel as usize] = 0xffffff,
-            1 => computer.memory[pixel as usize] = 0x000000,
+            0 => display.memory[pixel as usize] = 0xffffff,
+            1 => display.memory[pixel as usize] = 0x000000,
             _ => ()
         }
     }
 
-    let _ = computer.draw(&mut canvas, false);
+    let _ = display.draw(&mut canvas, false);
     canvas.present();
     std::thread::sleep(std::time::Duration::from_millis(1000));
 
     let mut event_pump = sdl_context.event_pump().unwrap();
-
-
-    for pixel in computer.vram_offset..=0x3ffffff
-    {
-        match ((pixel - computer.vram_offset) + (pixel - computer.vram_offset) / 128) % 2
-        {
-            0 => computer.memory[pixel as usize] = 0xffffff,
-            1 => computer.memory[pixel as usize] = 0x000000,
-            _ => ()
-        }
-
-    }
 
     let boot_pic = std::fs::File::open("boot.bmp");
     if boot_pic.is_ok()
@@ -481,7 +491,7 @@ fn main()
             for byte in 0..boot_pic_bytes.len().saturating_sub(boot_pic_image_start as usize).div_euclid(4)
             {
                 let boot_byte = boot_pic_image_start + byte.saturating_mul(4) as usize;
-                computer.memory[computer.vram_offset as usize + byte as usize] =
+                display.memory[byte as usize] =
                     usize::from_be_bytes(
                         [
                             0x0,
@@ -496,15 +506,15 @@ fn main()
                     );
             }
         }
-        computer.flip_vram_vertically();
+        display.flip_vram_vertically();
     }
 
     canvas.clear();
 
-    let _ = computer.draw(&mut canvas, false);
+    let _ = display.draw(&mut canvas, false);
 
     canvas.present();
-    computer.calculate_color_corrections();
+    display.calculate_color_corrections();
     
     for pixel in computer.vram_offset..=0x3ffffff
     {
@@ -586,10 +596,61 @@ fn main()
     }
 	computer.check_for_rom();
 
+	let (vm_tx, sdl_rx)		= std::sync::mpsc::channel();
+	let (cmd_tx, cmd_rx)	= std::sync::mpsc::channel();
+	let (data_tx, data_rx)	= std::sync::mpsc::channel();
+
+	let vm_thread_handle = std::thread::spawn(move ||
+	{
+		let mut stop = false;
+		while !stop
+		{
+			// 	we need to share
+			//		- a copy of memory(only when requested)
+			//			for memory dumps, draw calls(maybe just vram)
+			//
+			//	we need to recieve
+			//		- input to insert into memory
+			//		- stop command
+			
+			let sdl_data = cmd_rx.recv_timeout(std::time::Duration::new(0, 1));
+			if sdl_data.is_ok()
+			{
+				let sdl_data: usize = sdl_data.unwrap();
+				match sdl_data
+				{
+					DUMPMEM		=>
+						vm_tx.send(computer.memory.clone()).expect("failed to dump memory"),
+					DUMPVRAM	=> 
+					{
+						let mut vram: [usize; 0x4000] = [0; 16384];
+						for word in 0..0x4000
+						{
+							vram[word] = computer.memory[computer.vram_offset + word];
+						}
+						vm_tx.send(vram.to_vec()).expect("failed to send vram")
+					},
+					STOP		=> 
+					{
+						println!("ran for {} cycles", computer.profiling);
+						stop = true;
+					},
+					INPUT		=> 
+						computer.memory[computer.input_offset] = 
+							data_rx.recv_timeout(std::time::Duration::new(1, 0)).expect("failed to transmit keyboard event"),
+					_			=>
+						()
+				}
+			}
+			computer.profiling = computer.profiling.saturating_add(1);
+			computer.process_instruction();
+		}
+	});
 
 	'running: loop
 	{
-		canvas.set_draw_color(computer.get_nearest_color(0x0, 0, 0));
+
+		canvas.set_draw_color(sdl2::pixels::Color::RGB(0x3a, 0x26, 0x58));
 
 		canvas.clear();
 		for event in event_pump.poll_iter() {
@@ -597,70 +658,70 @@ fn main()
 				sdl2::event::Event::Quit {..} |
 				sdl2::event::Event::KeyDown { keycode: Some(sdl2::keyboard::Keycode::Escape), .. } =>
 				{
-					break 'running;//should escape
+					while !cmd_tx.send(STOP).is_ok() {}
+					break 'running;
 				},
 				sdl2::event::Event::KeyDown { keycode: Some(sdl2::keyboard::Keycode::F5), .. } =>
 				{
-					let memory_file = std::fs::File::create("x4c-memory.hex");
-					if memory_file.is_ok()
+					while !cmd_tx.send(DUMPMEM).is_ok() {}
+					let data = sdl_rx.recv_timeout(std::time::Duration::new(1, 0));
+					if data.is_ok()
 					{
-						let mut memory_file = memory_file.unwrap();
-						let mut file_data: Vec<u8> = vec![];
-						for address in 0..computer.memory.len()
+						let data: Vec<usize> = data.unwrap();
+						let memory_file = std::fs::File::create("x4c-memory.hex");
+						if memory_file.is_ok()
 						{
-							let address_read = computer.memory[address].to_be_bytes();
-							file_data.append(&mut address_read.to_vec());
+							let mut memory_file = memory_file.unwrap();
+							let mut file_data: Vec<u8> = vec![];
+							for address in 0..data.len()
+							{
+								let address_read = data[address].to_be_bytes();
+								file_data.append(&mut address_read.to_vec());
+							}
+							let _ = std::io::Write::write_all(&mut memory_file, &file_data);
 						}
-						let _ = std::io::Write::write_all(&mut memory_file, &file_data);
 					}
-				},
-				sdl2::event::Event::KeyDown { keycode: Some(sdl2::keyboard::Keycode::F6), .. } =>
-				{
-					let memory_file = std::fs::File::create("colormap.hex");
-					if memory_file.is_ok()
-					{
-						let mut memory_file = memory_file.unwrap();
-						let mut file_data: Vec<u8> = vec![];
-						for address in 0..computer.colormap_table.len()
-						{
-							let address_read = computer.colormap_table[address].to_be_bytes();
-							file_data.append(&mut address_read.to_vec());
-						}
-						let _ = std::io::Write::write_all(&mut memory_file, &file_data);
-					}
-
 				},
 				sdl2::event::Event::KeyDown { keycode: Some(sdl2::keyboard::Keycode::F2), .. } =>
 				{
-					computer.display_scale_by = computer.display_scale_by.saturating_sub(1);
+					display.display_scale_by = display.display_scale_by.saturating_sub(1);
 				},
 				sdl2::event::Event::KeyDown { keycode: Some(sdl2::keyboard::Keycode::F3), .. } =>
 				{
-					computer.display_scale_by = computer.display_scale_by.saturating_add(1);
+					display.display_scale_by = display.display_scale_by.saturating_add(1);
 				},
 				sdl2::event::Event::KeyDown { keycode, .. } =>
 				{
 					if keycode.is_some()
 					{
-						computer.memory[computer.input_offset as usize] = keycode.unwrap().into_i32() as usize;
-						println!("{:?}",keycode);
+						while !cmd_tx.send(INPUT).is_ok() {}
+						while !data_tx.send(keycode.unwrap().into_i32() as usize).is_ok() {}
 					}
 				}
 				_ => {}
 			}
 		}
 
-		canvas.set_draw_color(computer.get_nearest_color(0xff0000, 0, 0));
+		canvas.set_draw_color(sdl2::pixels::Color::RGB(0x56, 0x33, 0x41));
 		let _ = canvas.draw_rect(
 			sdl2::rect::Rect::new(
 				9,
 				9,
-				u32::from_usize(computer.display_scale_by)[0] * 128+2,
-				u32::from_usize(computer.display_scale_by)[0] * 128+2
+				u32::from_usize(display.display_scale_by)[0] * 128+2,
+				u32::from_usize(display.display_scale_by)[0] * 128+2
 			)
 		).is_ok();
-		let result = computer.draw(&mut canvas, true);
+		while !cmd_tx.send(DUMPVRAM).is_ok() {}
+		let vram = sdl_rx.recv();
+		if vram.is_ok()
+		{
+			let vram = vram.unwrap();
+			for pixel in 0..0x4000
+			{
+				display.memory = vram.clone();
+			}
+		}
+		let _ = display.draw(&mut canvas, true);
 		canvas.present();
-		computer.process_instruction();
 	}
 }
