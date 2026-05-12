@@ -438,7 +438,7 @@ fn main()
         display_size:       		128 * 128,
         vram_offset:        		0x03ffc000,
 
-        input_offset:       		0x03ffbfff,
+        input_offset:       		0x003ffbbb,
         character_table_offset: 	0x003ffbbc,
 
 		profiling:					0x0,
