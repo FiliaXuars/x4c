@@ -52,7 +52,8 @@ impl NewComputer
             }
             0x4 =>
             {
-                self.buffer[buffer_address_a as usize] = self.memory[memory_address as usize];
+				let value = self.memory[memory_address as usize];
+                self.buffer[buffer_address_a as usize] = self.memory[value];
                 self.program_position = self.program_position.wrapping_add(1);
             },
             0x5 =>
