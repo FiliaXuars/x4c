@@ -1,5 +1,5 @@
 static FULLCOLOR: bool = false;
-static DEBUG: bool = true;
+static DEBUG: bool = false;
 
 pub struct NewComputer
 {
@@ -680,14 +680,19 @@ fn main()
 					if data.is_ok()
 					{
 						let data: Vec<usize> = data.unwrap();
+						let mut u32_data: Vec<u32> = vec![];
+						for word in 0..data.len()
+						{
+							u32_data.push((data[word] & 0xffffffff) as u32);
+						}
 						let memory_file = std::fs::File::create("x4c-memory.hex");
 						if memory_file.is_ok()
 						{
 							let mut memory_file = memory_file.unwrap();
 							let mut file_data: Vec<u8> = vec![];
-							for address in 0..data.len()
+							for address in 0..u32_data.len()
 							{
-								let address_read = data[address].to_be_bytes();
+								let address_read = u32_data[address].to_be_bytes();
 								file_data.append(&mut address_read.to_vec());
 							}
 							let _ = std::io::Write::write_all(&mut memory_file, &file_data);
