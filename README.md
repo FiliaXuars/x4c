@@ -38,4 +38,5 @@ b   nor                 [iccc-----]
 c   add                 [iccc-----]
 d   sub                 [iccc-----]
 e   shift left          [iccc-----]
-f   shift right         [iccc-----]```
+f   shift right         [iccc-----]
+```
