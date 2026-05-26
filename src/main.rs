@@ -1,5 +1,5 @@
 static FULLCOLOR: bool = false;
-static DEBUG: bool = false;
+static DEBUG: bool = true;
 
 pub struct NewComputer
 {
@@ -29,31 +29,40 @@ impl NewComputer
         let buffer_address_a = ((read & 0x0c000000) >> 26) as u8;
         let buffer_address_b = ((read & 0x03000000) >> 24) as u8;
         let buffer_address_c = ((read & 0x00c00000) >> 22) as u8;
-        match instruction
+		if DEBUG
+		{
+			println!("{:?}", self.buffer);
+			println!("{instruction} {buffer_address_a} {memory_address}");
+		}
+		match instruction
         {
             0x0 => self.program_position = self.program_position.wrapping_add(1),
             0x1 =>
             {
-                self.buffer[3] = self.program_position;
                 self.program_position = memory_address;
+                self.buffer[3] = self.program_position;
             },
             0x2 =>
             {
-                self.buffer[3] = self.program_position;
-                if self.buffer[buffer_address_a as usize] == 0xffffffff
+                if (self.buffer[buffer_address_a as usize] & 0xffffffff) == 0xffffffff
                 {
                     self.program_position = memory_address;
                 }
+				else
+				{
+					self.program_position = self.program_position.wrapping_add(1);
+				}
+                self.buffer[3] = self.program_position;
             },
             0x3 =>
             {
-                self.buffer[3] = self.program_position;
                 self.program_position = self.buffer[buffer_address_a as usize];
+                self.buffer[3] = self.program_position;
             }
             0x4 =>
             {
-				let value = self.memory[memory_address as usize];
-                self.buffer[buffer_address_a as usize] = self.memory[value];
+				let value = self.memory[memory_address as usize] & 0x03ffffff;
+                self.buffer[buffer_address_a as usize] = value;
                 self.program_position = self.program_position.wrapping_add(1);
             },
             0x5 =>
@@ -188,21 +197,23 @@ impl NewComputer
     pub fn load_rom(&mut self, path: String, value: usize )
     {
 		let file: Vec<u8> = std::fs::read(path).expect("dowp");
+		println!("loading {file:?}");
 		if file.len() > 0
 		{
-			for byte in 0..(file.len())/4
+			for word in 0..(file.len()-1)/4+1
 			{
-				if value < self.memory.len() - 1
+				if value + word < self.memory.len() - 1
 				{
-					self.memory[value + byte] =
+					self.memory[value + word] =
 					(
-						((file[(byte *4)]   as usize) << (8*3)) + 
-						((file[(byte *4)+1] as usize) << (8*2)) + 
-						((file[(byte *4)+2] as usize) << (8*1)) + 
-						((file[(byte *4)+3] as usize)         )
+						((file[(word *4)+0] as usize) << (8*3)) + 
+						((file[(word *4)+1] as usize) << (8*2)) + 
+						((file[(word *4)+2] as usize) << (8*1)) + 
+						((file[(word *4)+3] as usize) << (8*0))
 					);
 				}
 			}
+			return
 		}
     }
 }
