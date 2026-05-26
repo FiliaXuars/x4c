@@ -15,6 +15,7 @@ pub struct NewComputer
     pub input_offset:       		usize,
     pub character_table_offset:     usize,
 
+	pub debug:						usize,
 	pub profiling:					usize,
 }
 
@@ -29,14 +30,18 @@ impl NewComputer
         let buffer_address_a = ((read & 0x0c000000) >> 26) as u8;
         let buffer_address_b = ((read & 0x03000000) >> 24) as u8;
         let buffer_address_c = ((read & 0x00c00000) >> 22) as u8;
-		if DEBUG
+		if self.debug == 1
 		{
 			println!("{:?}", self.buffer);
 			println!("{instruction} {buffer_address_a} {memory_address}");
 		}
 		match instruction
         {
-            0x0 => self.program_position = self.program_position.wrapping_add(1),
+            0x0 =>
+			{
+				self.debug = buffer_address_a as usize;
+				self.program_position = self.program_position.wrapping_add(1);
+			},
             0x1 =>
             {
                 self.program_position = memory_address;
@@ -453,6 +458,7 @@ fn main()
         input_offset:       		0x003ffbbb,
         character_table_offset: 	0x003ffbbc,
 
+		debug:						0x0,
 		profiling:					0x0,
     };
 
