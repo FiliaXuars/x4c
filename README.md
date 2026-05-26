@@ -8,17 +8,13 @@
 26b     main memory addressing
 
 67 108 864b
-8.38MB
+8MiB
 2 097 152 addresses
-000000-1fffff
+000000-3ffffff
 
-VRAM 1fbfff-1fffff
 5kb display 128^2 limited 32 color palette
 
-INPUT 1fbffe (default 32)
-32b
-
-0-f     0-f     000000-1fffff
+0-f     0-f     000000-3ffffff
 opcode  buffer  address
 
 i = instruction
@@ -42,12 +38,4 @@ b   nor                 [iccc-----]
 c   add                 [iccc-----]
 d   sub                 [iccc-----]
 e   shift left          [iccc-----]
-f   shift right         [iccc-----]
-
-[non-addressable]
-10  stores current program position to 000000 and goes to 000001's result if INPUT contains "^,"
-11  restarts to OS at ### if INPUT contains "^."
-
-[emulation]
-20  VRAM to "display"
-21  take keyboard events to INPUT (jumper wired to correct address)```
+f   shift right         [iccc-----]```
