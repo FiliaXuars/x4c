@@ -113,9 +113,7 @@ impl NewComputer
             },
             0xb =>
             {
-				let value = !self.buffer[buffer_address_a as usize] | !self.buffer[buffer_address_b as usize];
                 self.buffer[buffer_address_c as usize] = !self.buffer[buffer_address_a as usize] | !self.buffer[buffer_address_b as usize];
-				println!("[DEBUG] nor: {value}");
                 self.program_position = self.program_position.wrapping_add(1);
             },
             0xc =>
