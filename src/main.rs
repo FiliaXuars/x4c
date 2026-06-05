@@ -32,8 +32,10 @@ impl NewComputer
         let buffer_address_c = ((read & 0x00c00000) >> 22) as u8;
 		if self.debug == 1
 		{
-			println!("{:?}", self.buffer);
-			println!("{instruction} {buffer_address_a} {memory_address}");
+			println!("program position: {}", self.program_position);
+			println!("cmem: {:?}", self.buffer);
+			println!("word: {instruction} {buffer_address_a} {memory_address}\n");
+
 		}
 		match instruction
         {
@@ -52,12 +54,12 @@ impl NewComputer
                 if (self.buffer[buffer_address_a as usize] & 0xffffffff) == 0xffffffff
                 {
                     self.program_position = memory_address;
+					self.buffer[3] = self.program_position;
                 }
 				else
 				{
 					self.program_position = self.program_position.wrapping_add(1);
 				}
-                self.buffer[3] = self.program_position;
             },
             0x3 =>
             {
@@ -66,7 +68,7 @@ impl NewComputer
             }
             0x4 =>
             {
-				let value = self.memory[memory_address as usize] & 0x03ffffff;
+				let value = self.memory[memory_address as usize];
                 self.buffer[buffer_address_a as usize] = value;
                 self.program_position = self.program_position.wrapping_add(1);
             },
@@ -111,7 +113,9 @@ impl NewComputer
             },
             0xb =>
             {
+				let value = !self.buffer[buffer_address_a as usize] | !self.buffer[buffer_address_b as usize];
                 self.buffer[buffer_address_c as usize] = !self.buffer[buffer_address_a as usize] | !self.buffer[buffer_address_b as usize];
+				println!("[DEBUG] nor: {value}");
                 self.program_position = self.program_position.wrapping_add(1);
             },
             0xc =>
