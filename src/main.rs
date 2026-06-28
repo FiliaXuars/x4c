@@ -128,12 +128,12 @@ impl NewComputer
             },
             0xe =>
             {
-                self.buffer[buffer_address_c as usize] = self.buffer[buffer_address_a as usize].unbounded_shl(u32::from_usize(self.buffer[buffer_address_b as usize])[0]);
+                self.buffer[buffer_address_c as usize] = self.buffer[buffer_address_a as usize] / self.buffer[buffer_address_b as usize];
                 self.program_position = self.program_position.wrapping_add(1);
             },
             0xf =>
             {
-                self.buffer[buffer_address_c as usize] = self.buffer[buffer_address_a as usize].unbounded_shr(u32::from_usize(self.buffer[buffer_address_b as usize])[0]);
+                self.buffer[buffer_address_c as usize] = self.buffer[buffer_address_a as usize].carrying_mul(self.buffer[buffer_address_b as usize], 0).0;
                 self.program_position = self.program_position.wrapping_add(1);
             },
             _   => ()
