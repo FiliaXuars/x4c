@@ -128,7 +128,11 @@ impl NewComputer
             },
             0xe =>
             {
-                self.buffer[buffer_address_c as usize] = self.buffer[buffer_address_a as usize] / self.buffer[buffer_address_b as usize];
+				let value = self.buffer[buffer_address_b as usize];
+				if value != 0
+				{
+					self.buffer[buffer_address_c as usize] = self.buffer[buffer_address_a as usize] / self.buffer[buffer_address_b as usize];
+				}
                 self.program_position = self.program_position.wrapping_add(1);
             },
             0xf =>
@@ -620,6 +624,9 @@ fn main()
 	let (cmd_tx, cmd_rx)	= std::sync::mpsc::channel();
 	let (data_tx, data_rx)	= std::sync::mpsc::channel();
 
+	let (net_cmd_tx, net_cmd_rx)	= std::sync::mpsc::channel();
+	let (net_data_tx, net_data_rx)	= std::sync::mpsc::channel();
+
 	let vm_thread_handle = std::thread::spawn(move ||
 	{
 		let mut stop = false;
@@ -656,14 +663,64 @@ fn main()
 						stop = true;
 					},
 					INPUT		=> 
+					{
 						computer.memory[computer.input_offset] = 
-							data_rx.recv_timeout(std::time::Duration::new(1, 0)).expect("failed to transmit keyboard event"),
+							data_rx.recv_timeout(std::time::Duration::new(1, 0)).expect("failed to transmit keyboard event");
+					},
 					_			=>
 						()
 				}
 			}
+
+			let net_data = net_cmd_rx.recv_timeout(std::time::Duration::new(0, 1));
+			if net_data.is_ok()
+			{
+				let net_data: usize = net_data.unwrap();
+				match net_data
+				{
+
+					INPUT	=>
+					{
+						computer.memory[computer.input_offset-1] =
+                            net_data_rx.recv_timeout(std::time::Duration::new(1, 0)).expect("failed to transmit keyboard event");
+					},
+					_			=>
+						()
+				}
+			}
+
 			computer.profiling = computer.profiling.saturating_add(1);
 			computer.process_instruction();
+		}
+	});
+
+	let net_thread_handle = std::thread::spawn( move ||
+	{
+		let mut tcp_listener = std::net::TcpListener::bind("0.0.0.0:5863");
+		if tcp_listener.is_ok()
+		{
+			println!("listening at 0.0.0.0:5863");
+			let mut listener = tcp_listener.unwrap();
+			for stream in listener.incoming()
+			{
+				if stream.is_ok()
+				{
+					let mut stream = stream.unwrap();
+					let mut read_buffer: [u8; 1] = [0];
+					let mut byte = std::io::Read::take(&stream, 1);
+					let read_result = std::io::Read::read(&mut byte, &mut read_buffer);
+					if read_result.is_ok()
+					{
+						let value: u32 = 0_u8 as u32 + 0_u8 as u32 + 0_u8 as u32 + read_buffer[0] as u32;
+						while !net_cmd_tx.send(INPUT).is_ok() {}
+						while !net_data_tx.send(value as usize).is_ok() {}
+					}
+					else
+					{
+						println!("bad read");
+					}
+				}
+			}
 		}
 	});
 
